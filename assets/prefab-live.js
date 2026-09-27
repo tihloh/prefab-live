@@ -263,7 +263,16 @@
             });
 
             if (!response.ok) {
-                throw new Error(`Prefab Live request failed with HTTP ${response.status}.`);
+                let message = `Prefab Live request failed with HTTP ${response.status}.`;
+                try {
+                    const errorData = await response.json();
+                    if (typeof errorData?.message === 'string' && errorData.message.trim() !== '') {
+                        message = errorData.message.trim();
+                    }
+                } catch (_) {
+                    // Keep the HTTP fallback when the endpoint did not return JSON.
+                }
+                throw new Error(message);
             }
 
             const data = await response.json();
