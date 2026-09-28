@@ -157,6 +157,12 @@ $live = new LiveManager(
     fn (?string $token): bool => $token === 'csrf-token',
 );
 
+$runtimePath = LiveManager::runtimePath();
+assert(is_file($runtimePath));
+$runtimeContents = LiveManager::runtimeContents();
+assert($runtimeContents !== '');
+assert(str_contains($runtimeContents, 'pf\\:component'));
+
 $html = $live->mount('counter', ['start' => 2]);
 assert(str_contains($html, 'pf:component="counter"'));
 assert(str_contains($html, 'Count: 2'));
