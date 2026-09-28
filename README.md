@@ -122,13 +122,33 @@ Prefab Live wraps the rendered component with its alias, instance ID, signed sna
 
 ## 5. Add the browser runtime
 
-Serve `assets/prefab-live.js` from your application's public assets and load it once:
+Prefab Live owns its browser runtime and exposes it without depending on a router:
 
-```html
-<script src="/assets/prefab-live.js" defer></script>
+```php
+LiveManager::runtimePath();
+LiveManager::runtimeContents();
 ```
 
-No build step is required.
+Your application chooses the public URL and how that URL is routed. For example, plain PHP can expose the package runtime like this:
+
+```php
+if (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) === '/prefab/live/runtime.js') {
+    header('Content-Type: application/javascript; charset=UTF-8');
+    header('Cache-Control: no-cache');
+    echo LiveManager::runtimeContents();
+    exit;
+}
+```
+
+Then load it once:
+
+```html
+<script src="/prefab/live/runtime.js" defer></script>
+```
+
+No asset copy, publishing step or build step is required. The runtime is read from the installed `tihloh/prefab-live` package, so the browser code stays aligned with the Composer-installed module version.
+
+Prefab Live does not register routes and does not depend on Prefab Routes. Laravel, Slim, Symfony, Prefab Routes, Apache front controllers and custom routers can all expose the runtime using the same package API.
 
 ## 6. Handle the Live endpoint
 
