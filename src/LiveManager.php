@@ -132,6 +132,23 @@ final class LiveManager
         ];
     }
 
+    public static function runtimePath(): string
+    {
+        return dirname(__DIR__) . '/assets/prefab-live.js';
+    }
+
+    public static function runtimeContents(): string
+    {
+        $path = self::runtimePath();
+        $contents = @file_get_contents($path);
+
+        if ($contents === false) {
+            throw new RuntimeException('Prefab Live browser runtime is unavailable.');
+        }
+
+        return $contents;
+    }
+
     public static function decodeRequest(string $json): array
     {
         try {
