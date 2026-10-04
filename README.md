@@ -122,33 +122,13 @@ Prefab Live wraps the rendered component with its alias, instance ID, signed sna
 
 ## 5. Add the browser runtime
 
-Prefab Live owns its browser runtime and exposes it without depending on a router:
-
-```php
-LiveManager::runtimePath();
-LiveManager::runtimeContents();
-```
-
-Your application chooses the public URL and how that URL is routed. For example, plain PHP can expose the package runtime like this:
-
-```php
-if (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) === '/prefab/live/runtime.js') {
-    header('Content-Type: application/javascript; charset=UTF-8');
-    header('Cache-Control: no-cache');
-    echo LiveManager::runtimeContents();
-    exit;
-}
-```
-
-Then load it once:
+Serve `assets/prefab-live.js` from your application's public assets and load it once:
 
 ```html
-<script src="/prefab/live/runtime.js" defer></script>
+<script src="/assets/prefab-live.js" defer></script>
 ```
 
-No asset copy, publishing step or build step is required. The runtime is read from the installed `tihloh/prefab-live` package, so the browser code stays aligned with the Composer-installed module version.
-
-Prefab Live does not register routes and does not depend on Prefab Routes. Laravel, Slim, Symfony, Prefab Routes, Apache front controllers and custom routers can all expose the runtime using the same package API.
+No build step is required.
 
 ## 6. Handle the Live endpoint
 
@@ -267,6 +247,22 @@ Use `pf:error` to display the first current error for a field:
 ```
 
 Prefab Live also applies `aria-invalid="true"` while that field has an error.
+
+### Submit blocking while validation errors exist
+
+For a form using `pf:submit`, Prefab Live automatically disables its submit button while any model-bound field in that form has a current validation error:
+
+```html
+<form pf:submit="save">
+    <input pf:model.live.debounce.400ms="recordNo">
+    <small pf:error="recordNo"></small>
+    <button type="submit">Save</button>
+</form>
+```
+
+If `recordNo` fails its live validation, the submit button stays disabled until that field validates successfully again. Pressing Enter is also blocked while such errors remain, and Prefab Live focuses the first invalid field.
+
+Only model-field validation errors block submission. Form-level/server errors such as `_form` do not permanently disable the button because they may require a retry rather than a field change.
 
 ## 10. Lifecycle
 
