@@ -469,7 +469,7 @@ test('native select Enter confirms selection before moving to next tagged input'
     fund.focus();
     assert.equal(fund.pickerCalls, 1);
     const event = press(fund);
-    assert.equal(event.defaultPrevented, undefined);
+    assert.equal(event.defaultPrevented, false);
     assert.equal(appropriation.focused, false);
     keyUp(fund);
     assert.equal(appropriation.focused, false);
@@ -511,7 +511,7 @@ test('tagged native select without showPicker support retains browser behavior',
     const next = form.append(new HTMLInputElement());
     fund.pickerUnsupported = true;
     fund.focus();
-    assert.equal(press(fund).defaultPrevented, undefined);
+    assert.equal(press(fund).defaultPrevented, false);
     assert.equal(next.focused, false);
 });
 
