@@ -570,3 +570,19 @@ test('untagged selects never trigger automatic dropdown opening', () => {
     focusIn(selection);
     assert.equal(decorated.select2Open, false);
 });
+
+test('Ctrl+Enter inside an open Select2 search submits its tagged form', () => {
+    const {HTMLInputElement, HTMLSelectElement, HTMLFormElement, press, allSelect2} = setup({select2: true});
+    const form = new HTMLFormElement();
+    const person = form.append(new HTMLSelectElement({tag: 'select', visible: false}));
+    person.classes = ['select2-hidden-accessible'];
+    person.select2Open = true;
+    person.nextElementSibling = {classList: {contains: name => name === 'select2'}, getClientRects: () => [{}]};
+    allSelect2.push(person);
+    const save = form.addButton();
+    const search = new HTMLInputElement({tagged: false});
+    search.search = true;
+    assert.equal(press(search, {ctrlKey: true}).defaultPrevented, true);
+    assert.equal(form.submits, 1);
+    assert.equal(form.submitter, save);
+});
