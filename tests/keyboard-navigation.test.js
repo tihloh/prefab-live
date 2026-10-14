@@ -8,9 +8,11 @@ const vm = require('node:vm');
 
 const runtimePath = path.join(__dirname, '../assets/prefab-live.js');
 
-function setup() {
+function setup({select2 = false} = {}) {
     const listeners = new Map();
-    const root = {contains: form => form.root === root};
+    const timeouts = [];
+    const allSelect2 = [];
+    const root = {contains: element => element?.root === root || element?.form?.root === root};
 
     class TestElement {
         constructor({tag = 'input', tagged = true, type = 'text', order = '', visible = true, preferred = false} = {}) {
@@ -25,6 +27,8 @@ function setup() {
             this.focused = false;
             this.form = null;
             this.nextElementSibling = null;
+            this.search = false;
+            this.select2Open = false;
             this.classList = {contains: name => (this.classes || []).includes(name)};
         }
         hasAttribute(name) {
@@ -34,6 +38,9 @@ function setup() {
         getAttribute(name) { return name === 'pf:enter' && this.tagged ? this.order : null; }
         matches(selector) {
             if (selector === ':disabled') return this.disabled;
+            if (selector === 'input.select2-search__field' || selector === '.select2-search__field') {
+                return this.search;
+            }
             if (selector.includes('button[type="submit"]')) {
                 return this.tag === 'button' && (this.type === 'submit' || this.type === '')
                     || this.tag === 'input' && this.type === 'submit';
@@ -79,13 +86,23 @@ function setup() {
     }
     const document = {
         documentElement: {},
-        querySelectorAll: () => [],
-        addEventListener: (name, handler) => listeners.set(name, handler),
+        querySelectorAll: selector => selector.startsWith('select[pf') ? allSelect2 : [],
+        addEventListener: (name, handler, capture = false) => listeners.set(capture ? name + ':capture' : name, handler),
     };
+    function jquery(target) {
+        if (target === document) return {on: (name, handler) => listeners.set(name, handler)};
+        return {
+            data: name => name === 'select2' ? {isOpen: () => target.select2Open} : null,
+            select2: action => { if (action === 'open') target.select2Open = true; },
+        };
+    }
+    jquery.fn = {select2() {}};
     const context = {
-        document, window: {}, Element: TestElement, HTMLElement: TestElement,
+        document, window: select2 ? {jQuery: jquery} : {}, Element: TestElement, HTMLElement: TestElement,
         HTMLInputElement, HTMLSelectElement, HTMLTextAreaElement, HTMLFormElement,
         MutationObserver: class {observe() {}}, WeakMap, Set, Array, Object,
+        setTimeout: callback => { timeouts.push(callback); return timeouts.length; },
+        Promise,
     };
     vm.runInNewContext(fs.readFileSync(runtimePath, 'utf8'), context, {filename: runtimePath});
     function press(target, overrides = {}) {
@@ -95,10 +112,15 @@ function setup() {
             keyCode: 13, preventDefault() { this.defaultPrevented = true; },
             ...overrides,
         };
+        listeners.get('keydown:capture')?.(event);
         listeners.get('keydown')(event);
         return event;
     }
-    return {HTMLInputElement, HTMLSelectElement, HTMLTextAreaElement, HTMLFormElement, press, context};
+    return {
+        HTMLInputElement, HTMLSelectElement, HTMLTextAreaElement, HTMLFormElement,
+        press, context, allSelect2, timeouts,
+        select: target => listeners.get('select2:select.pfEnter')?.({target}),
+    };
 }
 
 test('Enter skips untagged controls and submits from the last tagged control', () => {
@@ -323,4 +345,89 @@ test('disabled preferred button falls back to an available submit button', () =>
     assert.equal(alternate.focused, true);
     press(field, {ctrlKey: true});
     assert.equal(form.submitter, alternate);
+});
+
+test('Select2 keyboard selection advances into the next tagged field in numeric order', () => {
+    const {HTMLInputElement, HTMLSelectElement, HTMLFormElement, press, allSelect2, timeouts, select} =
+        setup({select2: true});
+    const form = new HTMLFormElement();
+    const before = form.append(new HTMLInputElement({order: '60'}));
+    const program = form.append(new HTMLSelectElement({tag: 'select', order: '70', visible: false}));
+    program.classes = ['select2-hidden-accessible'];
+    program.select2Open = true;
+    program.nextElementSibling = {classList: {contains: name => name === 'select2'}, getClientRects: () => [{}]};
+    allSelect2.push(program);
+    const fund = form.append(new HTMLSelectElement({tag: 'select', order: '80'}));
+    const search = new HTMLInputElement({tagged: false});
+    search.search = true;
+    press(search);
+    select(program);
+    assert.equal(timeouts.length, 1);
+    timeouts.shift()();
+    assert.equal(fund.focused, true);
+    assert.equal(before.focused, false);
+    assert.equal(form.submits, 0);
+});
+
+test('Select2 mouse selection does not advance keyboard focus', () => {
+    const {HTMLInputElement, HTMLSelectElement, HTMLFormElement, select, timeouts, allSelect2} =
+        setup({select2: true});
+    const form = new HTMLFormElement();
+    const person = form.append(new HTMLSelectElement({tag: 'select', visible: false}));
+    person.classes = ['select2-hidden-accessible'];
+    person.select2Open = true;
+    person.nextElementSibling = {classList: {contains: name => name === 'select2'}, getClientRects: () => [{}]};
+    allSelect2.push(person);
+    const remarks = form.append(new HTMLInputElement());
+    select(person);
+    assert.equal(timeouts.length, 0);
+    assert.equal(remarks.focused, false);
+});
+
+test('several workflow Select2 handlers with the same order advance in DOM order', () => {
+    const {HTMLInputElement, HTMLSelectElement, HTMLFormElement, press, select, timeouts, allSelect2} =
+        setup({select2: true});
+    const form = new HTMLFormElement();
+    form.append(new HTMLInputElement({order: '120'}));
+    const person1 = form.append(new HTMLSelectElement({tag: 'select', order: '130', visible: false}));
+    const person2 = form.append(new HTMLSelectElement({tag: 'select', order: '130', visible: false}));
+    for (const person of [person1, person2]) {
+        person.classes = ['select2-hidden-accessible'];
+        person.nextElementSibling = {classList: {contains: name => name === 'select2'}, getClientRects: () => [{}]};
+        allSelect2.push(person);
+    }
+    const remarks = form.append(new HTMLInputElement({order: '140'}));
+    person1.select2Open = true;
+    const search = new HTMLInputElement({tagged: false});
+    search.search = true;
+    press(search);
+    select(person1);
+    timeouts.shift()();
+    assert.equal(person2.select2Open, true);
+    person1.select2Open = false;
+    press(search);
+    select(person2);
+    timeouts.shift()();
+    assert.equal(remarks.focused, true);
+    assert.equal(form.submits, 0);
+});
+
+test('last workflow Select2 keyboard selection obeys the configured submit mode', () => {
+    const {HTMLInputElement, HTMLSelectElement, HTMLFormElement, press, select, timeouts, allSelect2} =
+        setup({select2: true});
+    const form = new HTMLFormElement();
+    form.endBehavior = 'submit';
+    const person = form.append(new HTMLSelectElement({tag: 'select', visible: false}));
+    person.classes = ['select2-hidden-accessible'];
+    person.select2Open = true;
+    person.nextElementSibling = {classList: {contains: name => name === 'select2'}, getClientRects: () => [{}]};
+    allSelect2.push(person);
+    const save = form.addButton();
+    const search = new HTMLInputElement({tagged: false});
+    search.search = true;
+    press(search);
+    select(person);
+    timeouts.shift()();
+    assert.equal(form.submits, 1);
+    assert.equal(form.submitter, save);
 });
