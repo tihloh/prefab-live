@@ -454,7 +454,7 @@
         if (!isEnterControl(element) || !element.hasAttribute('pf:enter')) return false;
         if (element.matches(':disabled') || element.readOnly || element.closest('[hidden], [inert]')) return false;
         if (element instanceof HTMLInputElement
-            && ['hidden', 'button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio'].includes(element.type)) return false;
+            && ['hidden', 'button', 'submit', 'reset', 'image', 'file'].includes(element.type)) return false;
         const visibleElement = select2Widget(element) || element;
         return visibleElement.getClientRects().length > 0;
     };
@@ -483,6 +483,33 @@
         element.focus();
     };
 
+    // A marked default button wins over the first enabled submit button.
+    // This lets forms with multiple actions choose their keyboard default.
+    const enterDefaultButton = form => {
+        const buttons = Array.from(form.querySelectorAll('button, input[type="submit"], input[type="button"]'))
+            .filter(button => !button.disabled && !button.closest('[hidden], [inert]')
+                && button.getClientRects().length > 0);
+        return buttons.find(button => button.hasAttribute('pf:enter-default'))
+            || buttons.find(button => button.matches('button[type="submit"], input[type="submit"]'))
+            || null;
+    };
+
+    const enterSubmit = form => {
+        const buttons = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+        const preferred = enterDefaultButton(form);
+        const submitter = preferred && preferred.matches('button[type="submit"], input[type="submit"]')
+            ? preferred
+            : buttons.find(button => !button.disabled && !button.closest('[hidden], [inert]')
+                && button.getClientRects().length > 0);
+        if (submitter) form.requestSubmit(submitter);
+        else if (!buttons.length) form.requestSubmit();
+    };
+
+    const enterEndBehavior = form => {
+        const behavior = (form.getAttribute('pf:enter-end') || 'focus').trim().toLowerCase();
+        return ['focus', 'submit', 'none'].includes(behavior) ? behavior : 'focus';
+    };
+
     const handleEnterNavigation = event => {
         if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing || event.keyCode === 229
             || event.repeat || event.shiftKey || event.altKey || event.metaKey) return;
@@ -497,14 +524,16 @@
         if (index < 0) return;
 
         event.preventDefault();
-        if (!event.ctrlKey && index < controls.length - 1) {
+        if (event.ctrlKey) {
+            // Ctrl+Enter requests a submit regardless of the configured end behavior.
+            enterSubmit(form);
+        } else if (index < controls.length - 1) {
             focusEnterControl(controls[index + 1]);
         } else {
-            // Respect disabled submit actions (including Prefab validation/form readiness).
-            const submitters = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
-            const submitter = submitters.find(button => !button.disabled);
-            if (submitter) form.requestSubmit(submitter);
-            else if (!submitters.length) form.requestSubmit();
+            // Last tagged input: focus (default), submit, or suppress implicit submit.
+            const behavior = enterEndBehavior(form);
+            if (behavior === 'submit') enterSubmit(form);
+            else if (behavior === 'focus') enterDefaultButton(form)?.focus();
         }
     };
 
