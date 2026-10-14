@@ -661,7 +661,7 @@
     // then advance only for keyboard selections (not mouse selections).
     let keyboardSelect2 = null;
     document.addEventListener('keydown', event => {
-        if (event.key !== 'Enter' || event.ctrlKey || event.altKey || event.shiftKey
+        if (event.key !== 'Enter' || event.altKey || event.shiftKey
             || event.metaKey || event.isComposing || event.keyCode === 229
             || !(event.target instanceof Element)
             || !event.target.matches('input.select2-search__field')
@@ -671,6 +671,11 @@
                 && element.closest(componentSelector)
                 && window.jQuery(element).data('select2')?.isOpen?.());
         if (!selected) return;
+        if (event.ctrlKey) {
+            event.preventDefault();
+            if (selected.form) enterSubmit(selected.form);
+            return;
+        }
         keyboardSelect2 = selected;
         // A Select2 keyboard selection is emitted synchronously from this keydown.
         Promise.resolve().then(() => {
