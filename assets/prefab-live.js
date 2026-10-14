@@ -284,6 +284,21 @@
         }) || null;
     };
 
+    // Select2 renders a separate focusable widget/search box, sometimes outside
+    // the component (dropdownParent). Map keyboard focus back to its original select.
+    const select2FocusedControl = (root, focused) => {
+        if (!(focused instanceof Element)) return null;
+        const widget = focused.closest('.select2-container');
+        const select = widget?.previousElementSibling;
+        if (select instanceof HTMLSelectElement && root.contains(select)) return select;
+        if (!focused.matches('.select2-search__field') || typeof window.jQuery?.fn?.select2 !== 'function') {
+            return null;
+        }
+        return Array.from(root.querySelectorAll('select.select2-hidden-accessible')).find(element =>
+            window.jQuery(element).data('select2')?.isOpen?.()
+        ) || null;
+    };
+
     const replaceContentPreservingFocus = (
         root,
         html,
@@ -291,10 +306,11 @@
         preserveValues = null,
         validatedFields = [],
     ) => {
-        const active = document.activeElement instanceof Element && root.contains(document.activeElement)
-            ? document.activeElement
-            : null;
+        const focused = document.activeElement;
+        const select2Focus = select2FocusedControl(root, focused);
+        const active = select2Focus || (focused instanceof Element && root.contains(focused) ? focused : null);
         const identity = focusIdentity(active);
+        const restoreOpenSelect2 = Boolean(select2Focus && focused?.matches?.('.select2-search__field'));
         const selection = active && 'selectionStart' in active
             ? [active.selectionStart, active.selectionEnd]
             : null;
@@ -308,6 +324,24 @@
 
         const replacement = findByIdentity(root, identity);
         if (!(replacement instanceof HTMLElement)) return;
+
+        if (select2Focus) {
+            // The application initializes Select2 after prefab:live:updated.
+            // Focus its rebuilt widget after that hook, not the detached search box.
+            setTimeout(() => {
+                const current = findByIdentity(root, identity);
+                if (!(current instanceof HTMLSelectElement)) return;
+                const widget = current.nextElementSibling;
+                if (restoreOpenSelect2 && typeof window.jQuery?.fn?.select2 === 'function'
+                    && current.classList.contains('select2-hidden-accessible')) {
+                    const instance = window.jQuery(current).data('select2');
+                    if (!instance?.isOpen?.()) window.jQuery(current).select2('open');
+                } else {
+                    (widget?.querySelector('.select2-selection') || current).focus({preventScroll: true});
+                }
+            }, 0);
+            return;
+        }
 
         replacement.focus({preventScroll: true});
         if (selection && 'setSelectionRange' in replacement) {
@@ -536,6 +570,55 @@
             else if (behavior === 'focus') enterDefaultButton(form)?.focus();
         }
     };
+
+    // Select2 consumes Enter in its own search box. Let it select/close first,
+    // then advance only for keyboard selections (not mouse selections).
+    let keyboardSelect2 = null;
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || event.ctrlKey || event.altKey || event.shiftKey
+            || event.metaKey || event.isComposing || event.keyCode === 229
+            || !(event.target instanceof Element)
+            || !event.target.matches('input.select2-search__field')
+            || typeof window.jQuery?.fn?.select2 !== 'function') return;
+        const selected = Array.from(document.querySelectorAll('select[pf\\:enter].select2-hidden-accessible'))
+            .find(element => availableEnterControl(element)
+                && element.closest(componentSelector)
+                && window.jQuery(element).data('select2')?.isOpen?.());
+        if (!selected) return;
+        keyboardSelect2 = selected;
+        // A Select2 keyboard selection is emitted synchronously from this keydown.
+        Promise.resolve().then(() => {
+            if (keyboardSelect2 === selected) keyboardSelect2 = null;
+        });
+    }, true);
+
+    if (typeof window.jQuery?.fn?.select2 === 'function') {
+        window.jQuery(document).on('select2:select.pfEnter', event => {
+            const selected = event.target;
+            if (selected !== keyboardSelect2) return;
+            keyboardSelect2 = null;
+            const root = selected.closest(componentSelector);
+            const identity = focusIdentity(selected);
+            setTimeout(() => {
+                if (!root) return;
+                // A live update may have replaced the original select already.
+                const current = root.contains(selected) ? selected : findByIdentity(root, identity);
+                if (!current || !availableEnterControl(current)) return;
+                const form = current.form;
+                if (!form) return;
+                const controls = enterControls(form);
+                const index = controls.indexOf(current);
+                if (index < 0) return;
+                if (index < controls.length - 1) {
+                    focusEnterControl(controls[index + 1]);
+                } else {
+                    const behavior = enterEndBehavior(form);
+                    if (behavior === 'submit') enterSubmit(form);
+                    else if (behavior === 'focus') enterDefaultButton(form)?.focus();
+                }
+            }, 0);
+        });
+    }
 
     document.addEventListener('keydown', handleEnterNavigation);
 
