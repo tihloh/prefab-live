@@ -178,3 +178,25 @@ test('initialized Select2 controls are available focus targets', () => {
     press(first);
     assert.equal(opened, true);
 });
+
+test('keyboard submission honors available submit buttons and chooses the first enabled action', () => {
+    const {HTMLInputElement, HTMLFormElement, press} = setup();
+    const form = new HTMLFormElement();
+    const input = form.append(new HTMLInputElement());
+    const queue = {disabled: true};
+    const print = {disabled: false};
+    const existingQuery = form.querySelectorAll.bind(form);
+    form.querySelectorAll = selector => selector.includes('button[type="submit"]')
+        ? [queue, print] : existingQuery(selector);
+    form.requestSubmit = submitter => { form.submits++; form.selected = submitter; };
+    press(input, {ctrlKey: true});
+    assert.equal(form.submits, 1);
+    assert.equal(form.selected, print);
+    print.disabled = true;
+    press(input);
+    assert.equal(form.submits, 1);
+    queue.disabled = false;
+    press(input);
+    assert.equal(form.submits, 2);
+    assert.equal(form.selected, queue);
+});
