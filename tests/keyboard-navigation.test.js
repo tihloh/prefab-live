@@ -26,6 +26,8 @@ function setup({select2 = false} = {}) {
             this.readOnly = false;
             this.focused = false;
             this.form = null;
+            this.attributes = [];
+            this.id = '';
             this.nextElementSibling = null;
             this.search = false;
             this.select2Open = false;
