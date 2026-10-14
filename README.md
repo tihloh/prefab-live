@@ -241,8 +241,8 @@ Use `pf:enter` **on individual fields** to opt them into Enter-key navigation wi
 
 - **Enter** on a tagged field moves focus to the next available tagged field (skipping `notes` in the example).
 - **Enter** on the last available tagged field triggers the form's normal submission.
-- **Ctrl+Enter** on **any tagged field** immediately requests submission, without changing focus. It does not bypass browser validation, `pf:submit` validation, or the server-side `#[Action]` rules.
-- Untagged fields, including textareas, preserve their default Enter behavior. **Shift+Enter** also retains its normal behavior.
+- **Ctrl+Enter** on **any tagged field** requests submission without changing focus. The first enabled submit button is used; when every submit button is disabled, submission does not occur. This does not bypass browser validation, `pf:submit` validation, or server-side `#[Action]` rules.
+- Untagged fields, including textareas, preserve their default Enter behavior. **Shift+Enter** retains its normal behavior (including a newline in a tagged textarea).
 - Disabled, readonly, hidden, and non-textual button/file/checkbox/radio controls are skipped. The available-field list is computed per keypress, so dynamically added/removed fields and conditional visibility work.
 - By default, tagged controls follow **DOM order**. You may specify numeric order with `pf:enter="1"`, `pf:enter="2"` etc. Explicitly numbered controls appear first (ascending), and unnumbered tagged controls follow in DOM order.
 - The directive works within a mounted Prefab Live component and its own enclosing `<form>`. It does not attach to all inputs on the page. Select2-initialized selects can be navigation targets; Prefab opens their dropdown when they receive focus through this directive. Select2's own dropdown keyboard handling is left intact.
