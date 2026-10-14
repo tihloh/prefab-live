@@ -437,6 +437,75 @@
 
     document.querySelectorAll(componentSelector).forEach(initializeRoot);
 
+
+    // Opt-in Enter navigation. Only tagged, available controls in the same form participate.
+    const enterSelector = 'input[pf\\:enter], select[pf\\:enter], textarea[pf\\:enter]';
+    const isEnterControl = element => element instanceof HTMLInputElement
+        || element instanceof HTMLSelectElement
+        || element instanceof HTMLTextAreaElement;
+
+    const select2Widget = element => {
+        if (!(element instanceof HTMLSelectElement) || !element.classList.contains('select2-hidden-accessible')) return null;
+        const widget = element.nextElementSibling;
+        return widget?.classList.contains('select2') ? widget : null;
+    };
+
+    const availableEnterControl = element => {
+        if (!isEnterControl(element) || !element.hasAttribute('pf:enter')) return false;
+        if (element.matches(':disabled') || element.readOnly || element.closest('[hidden], [inert]')) return false;
+        if (element instanceof HTMLInputElement
+            && ['hidden', 'button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio'].includes(element.type)) return false;
+        const visibleElement = select2Widget(element) || element;
+        return visibleElement.getClientRects().length > 0;
+    };
+
+    const enterOrder = element => {
+        const order = (element.getAttribute('pf:enter') || '').trim();
+        return /^\d+$/.test(order) && Number.isSafeInteger(Number(order)) ? Number(order) : null;
+    };
+
+    const enterControls = form => Array.from(form.querySelectorAll(enterSelector))
+        .filter(element => element.form === form && availableEnterControl(element))
+        .map((element, index) => ({element, index, order: enterOrder(element)}))
+        .sort((a, b) => {
+            if (a.order !== null && b.order !== null) return a.order - b.order || a.index - b.index;
+            if (a.order !== null) return -1;
+            if (b.order !== null) return 1;
+            return a.index - b.index;
+        })
+        .map(item => item.element);
+
+    const focusEnterControl = element => {
+        if (select2Widget(element) && typeof window.jQuery?.fn?.select2 === 'function') {
+            window.jQuery(element).select2('open');
+            return;
+        }
+        element.focus();
+    };
+
+    const handleEnterNavigation = event => {
+        if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing || event.keyCode === 229
+            || event.repeat || event.shiftKey || event.altKey || event.metaKey) return;
+        const control = event.target;
+        if (!isEnterControl(control) || !availableEnterControl(control)) return;
+        const form = control.form;
+        const root = control.closest(componentSelector);
+        if (!form || !root || !root.contains(form)) return;
+
+        const controls = enterControls(form);
+        const index = controls.indexOf(control);
+        if (index < 0) return;
+
+        event.preventDefault();
+        if (!event.ctrlKey && index < controls.length - 1) {
+            focusEnterControl(controls[index + 1]);
+        } else {
+            form.requestSubmit(); // Uses native validation and the existing pf:submit handler.
+        }
+    };
+
+    document.addEventListener('keydown', handleEnterNavigation);
+
     document.addEventListener('input', event => {
         const element = event.target instanceof Element ? event.target : null;
         if (moneyInput(element)) formatMoneyTyping(element);
