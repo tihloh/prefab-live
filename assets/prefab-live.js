@@ -490,14 +490,14 @@
             .filter(button => !button.disabled && !button.closest('[hidden], [inert]')
                 && button.getClientRects().length > 0);
         return buttons.find(button => button.hasAttribute('pf:enter-default'))
-            || buttons.find(button => button.matches('button[type="submit"], input[type="submit"]'))
+            || buttons.find(button => button.matches('button:not([type]), button[type="submit"], input[type="submit"]'))
             || null;
     };
 
     const enterSubmit = form => {
-        const buttons = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+        const buttons = Array.from(form.querySelectorAll('button:not([type]), button[type="submit"], input[type="submit"]'));
         const preferred = enterDefaultButton(form);
-        const submitter = preferred && preferred.matches('button[type="submit"], input[type="submit"]')
+        const submitter = preferred && preferred.matches('button:not([type]), button[type="submit"], input[type="submit"]')
             ? preferred
             : buttons.find(button => !button.disabled && !button.closest('[hidden], [inert]')
                 && button.getClientRects().length > 0);
