@@ -39,7 +39,38 @@
     const modelElements = (root) => Array.from(root.querySelectorAll('input,select,textarea'))
         .filter(element => modelDirective(element)?.path);
 
+    // pf:format="money": formatted text for users, plain decimals for models.
+    const moneyInput = element => element instanceof HTMLInputElement
+        && element.getAttribute('pf:format') === 'money';
+    const moneyRaw = value => {
+        const text = String(value ?? '').replace(/[^0-9.]/g, '');
+        const point = text.indexOf('.');
+        const whole = (point < 0 ? text : text.slice(0,point)).replace(/^0+(?=\d)/, '');
+        const decimals = point < 0 ? '' : text.slice(point+1).replace(/\./g,'').slice(0,2);
+        return whole + (point < 0 ? '' : '.'+decimals);
+    };
+    const moneyDisplay = (value, complete = false) => {
+        const raw = moneyRaw(value);
+        if (!raw) return '';
+        const parts = raw.split('.');
+        const whole = (parts[0] || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        return whole + (complete ? '.' + (parts[1] || '').padEnd(2,'0')
+            : parts.length > 1 ? '.'+parts[1] : '');
+    };
+    const formatMoneyTyping = element => {
+        const before = element.value.slice(0,element.selectionStart ?? element.value.length);
+        const index = moneyRaw(before).length;
+        element.value = moneyDisplay(element.value);
+        let offset = 0, seen = 0;
+        while (offset < element.value.length && seen < index) {
+            if (/[0-9.]/.test(element.value[offset])) seen++;
+            offset++;
+        }
+        if (document.activeElement === element) element.setSelectionRange(offset,offset);
+    };
+
     const readValue = (element) => {
+        if (moneyInput(element)) return moneyRaw(element.value);
         if (element instanceof HTMLInputElement) {
             if (element.type === 'checkbox') return element.checked;
             if (element.type === 'radio') return element.checked ? element.value : undefined;
@@ -115,7 +146,7 @@
             return;
         }
 
-        element.value = value === null ? '' : String(value);
+        element.value = moneyInput(element) ? moneyDisplay(value,true) : value === null ? '' : String(value);
     };
 
     const syncModelValues = (root, snapshot) => {
@@ -293,6 +324,9 @@
         if (!errorState.has(root)) errorState.set(root, {});
         setLoading(root, false);
         renderErrors(root);
+        root.querySelectorAll('[pf\\:format="money"]').forEach(element => {
+            if (moneyInput(element) && document.activeElement !== element) element.value = moneyDisplay(element.value,true);
+        });
     };
 
     const request = async (root, options = {}) => {
@@ -405,6 +439,7 @@
 
     document.addEventListener('input', event => {
         const element = event.target instanceof Element ? event.target : null;
+        if (moneyInput(element)) formatMoneyTyping(element);
         const directive = modelDirective(element);
         if (!directive || directive.modifiers.includes('blur')) return;
         if (!directive.modifiers.includes('live') && !directive.modifiers.includes('debounce')) return;
@@ -425,6 +460,7 @@
 
     document.addEventListener('focusout', event => {
         const element = event.target instanceof Element ? event.target : null;
+        if (moneyInput(element)) element.value = moneyDisplay(element.value,true);
         const directive = modelDirective(element);
         if (!directive?.modifiers.includes('blur')) return;
         scheduleModel(element);
