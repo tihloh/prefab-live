@@ -228,26 +228,33 @@ The browser runtime prevents the normal form submission, sends current model val
 
 ## 8a. Tagged Enter navigation
 
-Use `pf:enter` **on individual fields** to opt them into Enter-key navigation within their own form. Untagged controls are never included in the navigation sequence:
+`pf:enter` on individual inputs, selects or textareas opts them into Enter navigation. Other controls preserve their native behavior. Configure what happens **at the last available tagged control** with `pf:enter-end` on the owning form:
+
+| `pf:enter-end` | Enter on last tagged control |
+|---|---|
+| `focus` (default) | Focus the default button; press Enter again to activate it. This avoids accidental submission. |
+| `submit` | Request normal form submission immediately. |
+| `none` | Do nothing (and suppress browser implicit submission). |
 
 ```html
-<form pf:submit="save">
-    <input name="firstName" pf:model="firstName" pf:enter>
-    <input name="notes" pf:model="notes">
-    <input name="lastName" pf:model="lastName" pf:enter>
-    <button type="submit">Save</button>
+<form pf:submit="save" pf:enter-end="focus">
+    <input pf:model="firstName" pf:enter="10">
+    <input pf:model="notes">
+    <input pf:model="lastName" pf:enter="20">
+    <button type="button">Cancel</button>
+    <button type="submit" pf:enter-default>Save</button>
 </form>
 ```
 
-- **Enter** on a tagged field moves focus to the next available tagged field (skipping `notes` in the example).
-- **Enter** on the last available tagged field triggers the form's normal submission.
-- **Ctrl+Enter** on **any tagged field** requests submission without changing focus. The first enabled submit button is used; when every submit button is disabled, submission does not occur. This does not bypass browser validation, `pf:submit` validation, or server-side `#[Action]` rules.
-- Untagged fields, including textareas, preserve their default Enter behavior. **Shift+Enter** retains its normal behavior (including a newline in a tagged textarea).
-- Disabled, readonly, hidden, and non-textual button/file/checkbox/radio controls are skipped. The available-field list is computed per keypress, so dynamically added/removed fields and conditional visibility work.
-- By default, tagged controls follow **DOM order**. You may specify numeric order with `pf:enter="1"`, `pf:enter="2"` etc. Explicitly numbered controls appear first (ascending), and unnumbered tagged controls follow in DOM order.
-- The directive works within a mounted Prefab Live component and its own enclosing `<form>`. It does not attach to all inputs on the page. Select2-initialized selects can be navigation targets; Prefab opens their dropdown when they receive focus through this directive. Select2's own dropdown keyboard handling is left intact.
+- **Enter** on a tagged control advances to the next available tagged control, ignoring untagged fields.
+- **Ctrl+Enter** on **any tagged control** requests normal submission regardless of `pf:enter-end`. It does not bypass native constraint validation, blocked Prefab Live fields, authorization or server-side validation.
+- `pf:enter-default` explicitly designates the preferred enabled button. Otherwise Prefab chooses the first enabled submit button. To submit, the target must be a submit button: a marked non-submit button is focusable as the default, but never treated as a submit action.
+- The last-field behavior applies to the form only. Disabled, readonly, hidden/inert and non-focusable controls are skipped dynamically. Visible tagged checkboxes and radio buttons may participate; hidden/file/button inputs do not.
+- `pf:enter="10"`, `pf:enter="20"` etc. specify ordering. Numbered inputs come first in ascending order, followed by unnumbered tagged controls in DOM order; missing/removed conditional inputs are skipped.
+- `Shift+Enter` is untouched (e.g. a newline in a textarea). Untagged textareas retain regular Enter behavior. Tagged textareas use Enter for navigation, so use Shift+Enter to insert a newline.
+- The directive operates within a mounted Prefab Live component and its enclosing form. Select2-enhanced controls can receive focus as navigation targets; the Select2 dropdown handles its own keyboard interactions.
 
-Submission uses the form's standard `requestSubmit()` flow so normal `submit` listeners (including `pf:submit`) and constraint validation still apply. No separate submit handler or server action is required.
+Submission uses `form.requestSubmit(submitter)` so the existing `submit` event, `pf:submit` handler and normal browser validation remain in place. If the form has submit buttons but every button is disabled, no keyboard submission occurs. If there is no submit button, a submit request may use `requestSubmit()` without an explicit submitter.
 
 ## 9. Loading and field errors
 
