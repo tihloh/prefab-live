@@ -500,7 +500,11 @@
         if (!event.ctrlKey && index < controls.length - 1) {
             focusEnterControl(controls[index + 1]);
         } else {
-            form.requestSubmit(); // Uses native validation and the existing pf:submit handler.
+            // Respect disabled submit actions (including Prefab validation/form readiness).
+            const submitters = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+            const submitter = submitters.find(button => !button.disabled);
+            if (submitter) form.requestSubmit(submitter);
+            else if (!submitters.length) form.requestSubmit();
         }
     };
 
