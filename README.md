@@ -15,6 +15,7 @@ Prefab Live currently focuses on the core reactive loop:
 - automatic `pf:error` field messages and field-scoped `pf:loading`;
 - `pf:click` actions;
 - `pf:submit` form actions;
+- opt-in per-control `pf:enter` keyboard navigation and Ctrl+Enter form submission;
 - focus/cursor preservation during component refreshes;
 - signed snapshots;
 - explicit `#[Action]` methods;
@@ -224,6 +225,29 @@ The top-level public property must be an array for nested updates.
 ```
 
 The browser runtime prevents the normal form submission, sends current model values plus the action, then replaces only that component's rendered HTML.
+
+## 8a. Tagged Enter navigation
+
+Use `pf:enter` **on individual fields** to opt them into Enter-key navigation within their own form. Untagged controls are never included in the navigation sequence:
+
+```html
+<form pf:submit="save">
+    <input name="firstName" pf:model="firstName" pf:enter>
+    <input name="notes" pf:model="notes">
+    <input name="lastName" pf:model="lastName" pf:enter>
+    <button type="submit">Save</button>
+</form>
+```
+
+- **Enter** on a tagged field moves focus to the next available tagged field (skipping `notes` in the example).
+- **Enter** on the last available tagged field triggers the form's normal submission.
+- **Ctrl+Enter** on **any tagged field** immediately requests submission, without changing focus. It does not bypass browser validation, `pf:submit` validation, or the server-side `#[Action]` rules.
+- Untagged fields, including textareas, preserve their default Enter behavior. **Shift+Enter** also retains its normal behavior.
+- Disabled, readonly, hidden, and non-textual button/file/checkbox/radio controls are skipped. The available-field list is computed per keypress, so dynamically added/removed fields and conditional visibility work.
+- By default, tagged controls follow **DOM order**. You may specify numeric order with `pf:enter="1"`, `pf:enter="2"` etc. Explicitly numbered controls appear first (ascending), and unnumbered tagged controls follow in DOM order.
+- The directive works within a mounted Prefab Live component and its own enclosing `<form>`. It does not attach to all inputs on the page. Select2-initialized selects can be navigation targets; Prefab opens their dropdown when they receive focus through this directive. Select2's own dropdown keyboard handling is left intact.
+
+Submission uses the form's standard `requestSubmit()` flow so normal `submit` listeners (including `pf:submit`) and constraint validation still apply. No separate submit handler or server action is required.
 
 ## 9. Loading and field errors
 
