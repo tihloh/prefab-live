@@ -532,7 +532,7 @@
         if (!select2Widget(element) || select2Closing.has(element)
             || !availableEnterControl(element) || typeof window.jQuery?.fn?.select2 !== 'function') return false;
         const picker = window.jQuery(element);
-        if (!picker.data('select2')?.isOpen?.()) picker.select2('open');
+        if (!picker.data?.('select2')?.isOpen?.()) picker.select2('open');
         return true;
     };
 
