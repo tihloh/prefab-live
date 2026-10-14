@@ -509,11 +509,35 @@
         })
         .map(item => item.element);
 
-    const focusEnterControl = element => {
-        if (select2Widget(element) && typeof window.jQuery?.fn?.select2 === 'function') {
-            window.jQuery(element).select2('open');
-            return;
+    const nativePickerOpen = new WeakSet();
+    const nativeEnterPending = new WeakSet();
+    const select2Closing = new WeakSet();
+
+    // showPicker() is supported in modern browsers and requires user activation
+    // in some environments. A focusable select remains usable if it is unavailable.
+    const openNativePicker = element => {
+        if (!(element instanceof HTMLSelectElement) || select2Widget(element)
+            || !availableEnterControl(element) || nativePickerOpen.has(element)
+            || typeof element.showPicker !== 'function') return false;
+        try {
+            element.showPicker();
+            nativePickerOpen.add(element);
+            return true;
+        } catch (_) {
+            return false;
         }
+    };
+
+    const openSelect2 = element => {
+        if (!select2Widget(element) || select2Closing.has(element)
+            || !availableEnterControl(element) || typeof window.jQuery?.fn?.select2 !== 'function') return false;
+        const picker = window.jQuery(element);
+        if (!picker.data('select2')?.isOpen?.()) picker.select2('open');
+        return true;
+    };
+
+    const focusEnterControl = element => {
+        if (openSelect2(element)) return;
         element.focus();
     };
 
@@ -544,6 +568,62 @@
         return ['focus', 'submit', 'none'].includes(behavior) ? behavior : 'focus';
     };
 
+    const advanceEnterControl = control => {
+        if (!availableEnterControl(control)) return;
+        const form = control.form;
+        if (!form) return;
+        const controls = enterControls(form);
+        const index = controls.indexOf(control);
+        if (index < 0) return;
+        if (index < controls.length - 1) {
+            focusEnterControl(controls[index + 1]);
+        } else {
+            const behavior = enterEndBehavior(form);
+            if (behavior === 'submit') enterSubmit(form);
+            else if (behavior === 'focus') enterDefaultButton(form)?.focus();
+        }
+    };
+
+    const finishNativeSelectEnter = control => {
+        if (!nativeEnterPending.has(control)) return;
+        nativeEnterPending.delete(control);
+        nativePickerOpen.delete(control);
+        const root = control.closest(componentSelector);
+        const identity = focusIdentity(control);
+        // Let the browser commit the selected value and dispatch change first.
+        setTimeout(() => {
+            const current = root && root.contains(control) ? control : findByIdentity(root, identity);
+            if (current) advanceEnterControl(current);
+        }, 0);
+    };
+
+    // Focus on any tagged select should expose its choices, including Tab,
+    // click, initial focus, and navigation from the previous tagged control.
+    document.addEventListener('focusin', event => {
+        const focused = event.target;
+        const widget = focused instanceof Element ? focused.closest('.select2-container') : null;
+        const select2Select = widget?.previousElementSibling;
+        const control = select2Select instanceof HTMLSelectElement && select2Widget(select2Select)
+            ? select2Select : focused;
+        if (!(control instanceof HTMLSelectElement) || !availableEnterControl(control)
+            || !control.closest(componentSelector)) return;
+        if (select2Widget(control)) openSelect2(control);
+        else openNativePicker(control);
+    });
+
+    document.addEventListener('focusout', event => {
+        if (event.target instanceof HTMLSelectElement && !select2Widget(event.target)) {
+            nativePickerOpen.delete(event.target);
+            nativeEnterPending.delete(event.target);
+        }
+    });
+
+    document.addEventListener('keyup', event => {
+        const control = event.target;
+        if (event.key === 'Enter' && control instanceof HTMLSelectElement
+            && nativeEnterPending.has(control)) finishNativeSelectEnter(control);
+    });
+
     const handleEnterNavigation = event => {
         if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing || event.keyCode === 229
             || event.repeat || event.shiftKey || event.altKey || event.metaKey) return;
@@ -557,18 +637,24 @@
         const index = controls.indexOf(control);
         if (index < 0) return;
 
-        event.preventDefault();
-        if (event.ctrlKey) {
-            // Ctrl+Enter requests a submit regardless of the configured end behavior.
-            enterSubmit(form);
-        } else if (index < controls.length - 1) {
-            focusEnterControl(controls[index + 1]);
-        } else {
-            // Last tagged input: focus (default), submit, or suppress implicit submit.
-            const behavior = enterEndBehavior(form);
-            if (behavior === 'submit') enterSubmit(form);
-            else if (behavior === 'focus') enterDefaultButton(form)?.focus();
+        if (!event.ctrlKey && control instanceof HTMLSelectElement && !select2Widget(control)) {
+            // Let Enter confirm the native picker selection before moving focus.
+            // If focus could not open it earlier, retry under this real key gesture.
+            if (nativePickerOpen.has(control)) {
+                nativeEnterPending.add(control);
+                return;
+            }
+            if (openNativePicker(control)) {
+                event.preventDefault();
+                return;
+            }
+            // Unsupported picker API: preserve the browser's native Enter behavior.
+            return;
         }
+
+        event.preventDefault();
+        if (event.ctrlKey) enterSubmit(form);
+        else advanceEnterControl(control);
     };
 
     // Select2 consumes Enter in its own search box. Let it select/close first,
@@ -593,6 +679,15 @@
     }, true);
 
     if (typeof window.jQuery?.fn?.select2 === 'function') {
+        window.jQuery(document).on('select2:closing.pfEnter', event => {
+            if (event.target instanceof HTMLSelectElement) {
+                select2Closing.add(event.target);
+            }
+        });
+        window.jQuery(document).on('select2:close.pfEnter', event => {
+            const control = event.target;
+            setTimeout(() => select2Closing.delete(control), 0);
+        });
         window.jQuery(document).on('select2:select.pfEnter', event => {
             const selected = event.target;
             if (selected !== keyboardSelect2) return;
@@ -633,6 +728,9 @@
 
     document.addEventListener('change', event => {
         const element = event.target instanceof Element ? event.target : null;
+        if (element instanceof HTMLSelectElement && nativeEnterPending.has(element)) {
+            finishNativeSelectEnter(element);
+        }
         const directive = modelDirective(element);
         if (!directive || directive.modifiers.includes('blur')) return;
         if (!directive.modifiers.includes('live') && !directive.modifiers.includes('debounce')) return;
