@@ -51,13 +51,22 @@ function setup({select2 = false} = {}) {
         }
         closest(selector) {
             if (selector === '[hidden], [inert]') return this.inert ? {} : null;
+            if (selector === '.select2-container') return this.widgetContainer || null;
             return selector === '[pf\\:component]' ? this.form?.root : null;
         }
         getClientRects() { return this.visible ? [{}] : []; }
-        focus() { this.focused = true; }
+        focus() {
+            this.focused = true;
+            listeners.get('focusin')?.({target: this});
+        }
     }
     class HTMLInputElement extends TestElement {}
-    class HTMLSelectElement extends TestElement {}
+    class HTMLSelectElement extends TestElement {
+        showPicker() {
+            if (this.pickerUnsupported) throw new Error('showPicker unavailable');
+            this.pickerCalls = (this.pickerCalls || 0) + 1;
+        }
+    }
     class HTMLTextAreaElement extends TestElement {}
     class HTMLFormElement extends TestElement {
         constructor() {
@@ -121,6 +130,11 @@ function setup({select2 = false} = {}) {
     return {
         HTMLInputElement, HTMLSelectElement, HTMLTextAreaElement, HTMLFormElement,
         press, context, allSelect2, timeouts,
+        focusIn: target => listeners.get('focusin')?.({target}),
+        keyUp: target => listeners.get('keyup')?.({key: 'Enter', target}),
+        change: target => listeners.get('change')?.({target}),
+        select2Closing: target => listeners.get('select2:closing.pfEnter')?.({target}),
+        select2Close: target => listeners.get('select2:close.pfEnter')?.({target}),
         select: target => listeners.get('select2:select.pfEnter')?.({target}),
     };
 }
@@ -432,4 +446,127 @@ test('last workflow Select2 keyboard selection obeys the configured submit mode'
     timeouts.shift()();
     assert.equal(form.submits, 1);
     assert.equal(form.submitter, save);
+});
+
+test('focusing a tagged native select opens its picker automatically', () => {
+    const {HTMLInputElement, HTMLSelectElement, HTMLFormElement, press} = setup();
+    const form = new HTMLFormElement();
+    const first = form.append(new HTMLInputElement());
+    const fund = form.append(new HTMLSelectElement({tag: 'select'}));
+    const last = form.append(new HTMLInputElement());
+    press(first);
+    assert.equal(fund.focused, true);
+    assert.equal(fund.pickerCalls, 1);
+    assert.equal(last.focused, false);
+});
+
+test('native select Enter confirms selection before moving to next tagged input', () => {
+    const {HTMLSelectElement, HTMLInputElement, HTMLFormElement, press, keyUp, timeouts} = setup();
+    const form = new HTMLFormElement();
+    const fund = form.append(new HTMLSelectElement({tag: 'select'}));
+    const appropriation = form.append(new HTMLSelectElement({tag: 'select'}));
+    const last = form.append(new HTMLInputElement());
+    fund.focus();
+    assert.equal(fund.pickerCalls, 1);
+    const event = press(fund);
+    assert.equal(event.defaultPrevented, undefined);
+    assert.equal(appropriation.focused, false);
+    keyUp(fund);
+    assert.equal(appropriation.focused, false);
+    assert.equal(timeouts.length, 1);
+    timeouts.shift()();
+    assert.equal(appropriation.focused, true);
+    assert.equal(appropriation.pickerCalls, 1);
+    assert.equal(last.focused, false);
+});
+
+test('native select value change commits then advances without waiting for keyup', () => {
+    const {HTMLSelectElement, HTMLInputElement, HTMLFormElement, press, change, keyUp, timeouts} = setup();
+    const form = new HTMLFormElement();
+    const fund = form.append(new HTMLSelectElement({tag: 'select'}));
+    const last = form.append(new HTMLInputElement());
+    fund.focus();
+    press(fund);
+    change(fund);
+    keyUp(fund);
+    assert.equal(timeouts.length, 1);
+    timeouts.shift()();
+    assert.equal(last.focused, true);
+});
+
+test('mouse and arrow-key select changes do not unexpectedly move focus', () => {
+    const {HTMLSelectElement, HTMLInputElement, HTMLFormElement, change} = setup();
+    const form = new HTMLFormElement();
+    const fund = form.append(new HTMLSelectElement({tag: 'select'}));
+    const next = form.append(new HTMLInputElement());
+    fund.focus();
+    change(fund);
+    assert.equal(next.focused, false);
+});
+
+test('tagged native select without showPicker support retains browser behavior', () => {
+    const {HTMLSelectElement, HTMLInputElement, HTMLFormElement, press} = setup();
+    const form = new HTMLFormElement();
+    const fund = form.append(new HTMLSelectElement({tag: 'select'}));
+    const next = form.append(new HTMLInputElement());
+    fund.pickerUnsupported = true;
+    fund.focus();
+    assert.equal(press(fund).defaultPrevented, undefined);
+    assert.equal(next.focused, false);
+});
+
+test('focus on Select2 rendered selection opens dropdown automatically', () => {
+    const {HTMLSelectElement, HTMLFormElement, focusIn, context} = setup({select2: true});
+    const form = new HTMLFormElement();
+    const program = form.append(new HTMLSelectElement({tag: 'select', visible: false}));
+    program.classes = ['select2-hidden-accessible'];
+    program.nextElementSibling = {
+        classList: {contains: name => name === 'select2'},
+        getClientRects: () => [{}],
+    };
+    const selection = new context.HTMLElement({tag: 'span', tagged: false});
+    selection.widgetContainer = {previousElementSibling: program};
+    focusIn(selection);
+    assert.equal(program.select2Open, true);
+});
+
+test('closing Select2 does not immediately reopen via focus restoration', () => {
+    const {HTMLSelectElement, HTMLFormElement, focusIn, select2Closing, select2Close, timeouts, context} = setup({select2: true});
+    const form = new HTMLFormElement();
+    const person = form.append(new HTMLSelectElement({tag: 'select', visible: false}));
+    person.classes = ['select2-hidden-accessible'];
+    person.nextElementSibling = {
+        classList: {contains: name => name === 'select2'},
+        getClientRects: () => [{}],
+    };
+    const selection = new context.HTMLElement({tag: 'span', tagged: false});
+    selection.widgetContainer = {previousElementSibling: person};
+    focusIn(selection);
+    assert.equal(person.select2Open, true);
+    person.select2Open = false;
+    select2Closing(person);
+    select2Close(person);
+    focusIn(selection);
+    assert.equal(person.select2Open, false);
+    timeouts.shift()();
+    focusIn(selection);
+    assert.equal(person.select2Open, true);
+});
+
+test('untagged selects never trigger automatic dropdown opening', () => {
+    const {HTMLSelectElement, HTMLFormElement, focusIn, context} = setup({select2: true});
+    const form = new HTMLFormElement();
+    const native = form.append(new HTMLSelectElement({tag: 'select', tagged: false}));
+    native.focus();
+    assert.equal(native.pickerCalls, undefined);
+    const decorated = form.append(new HTMLSelectElement({tag: 'select', tagged: false, visible: false}));
+    decorated.classes = ['select2-hidden-accessible'];
+    decorated.nextElementSibling = {
+        classList: {contains: name => name === 'select2'},
+        getClientRects: () => [{}],
+    };
+    const selection = new context.HTMLElement({tag: 'span', tagged: false});
+    selection.widgetContainer = {previousElementSibling: decorated};
+    focusIn(selection);
+    assert.equal(decorated.select2Open, false);
 });
