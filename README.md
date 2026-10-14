@@ -252,7 +252,7 @@ The browser runtime prevents the normal form submission, sends current model val
 - The last-field behavior applies to the form only. Disabled, readonly, hidden/inert and non-focusable controls are skipped dynamically. Visible tagged checkboxes and radio buttons may participate; hidden/file/button inputs do not.
 - `pf:enter="10"`, `pf:enter="20"` etc. specify ordering. Numbered inputs come first in ascending order, followed by unnumbered tagged controls in DOM order; missing/removed conditional inputs are skipped.
 - `Shift+Enter` is untouched (e.g. a newline in a textarea). Untagged textareas retain regular Enter behavior. Tagged textareas use Enter for navigation, so use Shift+Enter to insert a newline.
-- The directive operates within a mounted Prefab Live component and its enclosing form. Select2-enhanced controls can receive focus as navigation targets; the Select2 dropdown handles its own keyboard interactions.
+- The directive operates within a mounted Prefab Live component and its enclosing form. Select2-enhanced controls can receive focus as navigation targets. Selecting a Select2 option with **Enter** advances to the next tagged control **after the dropdown closes**; mouse selection keeps its original focus behavior. Workflow-person Select2 fields with the same numeric order advance in DOM order. Focus is restored to the rebuilt Select2 control after reactive re-renders.
 
 Submission uses `form.requestSubmit(submitter)` so the existing `submit` event, `pf:submit` handler and normal browser validation remain in place. If the form has submit buttons but every button is disabled, no keyboard submission occurs. If there is no submit button, a submit request may use `requestSubmit()` without an explicit submitter.
 
