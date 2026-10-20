@@ -413,13 +413,20 @@
 
             const browserValues = action ? null : collectUpdates(root);
             mergeErrors(root, data, Boolean(action));
-            replaceContentPreservingFocus(
-                root,
-                data.html,
-                data.snapshot,
-                browserValues,
-                fields,
-            );
+            // Ordinary text-field validation updates errors and the Live
+            // snapshot only. Rebuilding the entire form on every keystroke
+            // detaches the focused input, loses IME/caret state, and can
+            // overwrite newer typing. Actions and structural/select changes
+            // still require the server-rendered HTML.
+            if (!options.preserveDom) {
+                replaceContentPreservingFocus(
+                    root,
+                    data.html,
+                    data.snapshot,
+                    browserValues,
+                    fields,
+                );
+            }
             root.setAttribute('pf:snapshot', encodeSnapshot(data.snapshot));
             root.setAttribute('pf:checksum', data.checksum);
             renderErrors(root);
@@ -443,9 +450,13 @@
         const value = readValue(element);
         if (value === undefined) return;
 
+        const textValidation = element instanceof HTMLTextAreaElement
+            || (element instanceof HTMLInputElement
+                && !['checkbox','radio','file','hidden','date','datetime-local','time','month','week'].includes(element.type));
         request(root, {
             updates: collectUpdates(root),
             validate: [directive.path],
+            preserveDom: textValidation,
         });
     };
 
